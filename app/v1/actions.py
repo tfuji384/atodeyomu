@@ -2,9 +2,10 @@
 SlackからのInteractiveActionsリクエストを処理する
 """
 import enum
+import emoji
 import logging
 from http import HTTPStatus
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Request, Response, Depends
 from fastapi.responses import RedirectResponse
@@ -115,9 +116,6 @@ async def actions(request: Request):
         return RedirectResponse('./shortcuts/')
     if payload.is_block_actions:
         if payload.container:
-            if payload.container.is_view:
-                # モーダルからの入力イベントが来るが使わないので空のレスポンスを返す
-                print(form['payload'])
             if payload.container.is_message:
                 # 「読んだ」ボタンを押したイベント
                 return RedirectResponse('./message/')
@@ -139,33 +137,36 @@ async def shortcuts(request: Request):
         return Response(status_code=HTTPStatus.BAD_REQUEST)
     client = WebClient(team_conf.access_token)
     if payload.callback_id == 'edit_emoji_set':
-        blocks = [InputBlock(block_id='emoji_1', label='1つ目のemoji', element=PlainTextInputElement(action_id='emoji_1'))]
-        view = View(title='emojiを追加する', type='modal', callback_id='edit_emoji_set', blocks=blocks, submit='送信')
-        client.views_open(trigger_id=payload.trigger_id, view=view)
-    if payload.callback_id == 'add_emoji':
-        blocks = [
+        emoji_set = team_conf.emoji_set
+        # 登録できるemojiは3つまで
+        if emoji_set is None:
+            emoji_count = 0
+            external_input = 3
+            blocks = []
+        else:
+            emoji_count = len(emoji_set)
+            external_input = 3 - emoji_count
+            blocks = [
+                InputBlock(
+                    block_id=f'emoji_{index}',
+                    label=f':{item}:',
+                    element=PlainTextInputElement(
+                        action_id=f'emoji_{index}',
+                        initial_value=item,
+                        placeholder=':atodeyomu:',
+                    ),
+                    optional=True,
+                ) for index, item in enumerate(emoji_set)
+            ]
+        blocks += [
             InputBlock(
-                block_id='emoji',
-                label='追加するemoji',
-                element=PlainTextInputElement(action_id='emoji', placeholder=':atodeyomu:'),
-            ),
+                block_id=f'emoji_{emoji_count + i}',
+                label=f'追加するemoji（{emoji_count + i}つ目）',
+                element=PlainTextInputElement(action_id=f'emoji_{emoji_count + i}', placeholder=':atodeyomu:'),
+                optional=True,
+            ) for i in range(external_input)
         ]
-        view = View(title='emojiを追加する', type='modal', callback_id='add_emoji', blocks=blocks, submit='登録する')
-        if payload.trigger_id:
-            client.views_open(trigger_id=payload.trigger_id, view=view)
-    if payload.callback_id == 'remove_emoji':
-        # TODO: TeamConf.emoji_setがNoneの場合を考える
-        options = [Option(label=f':{item}:', value=item) for item in team_conf.emoji_set]
-        view = View(title='emojiを削除する',
-                    type='modal',
-                    callback_id='remove_emoji',
-                    blocks=[
-                        ActionsBlock(
-                            block_id='emoji_list',
-                            elements=[CheckboxesElement(action_id='emoji_list', options=options)],
-                        )
-                    ],
-                    submit='選択した項目を削除する')
+        view = View(title='emojiを追加する', type='modal', callback_id='edit_emoji_set', blocks=blocks, submit='送信')
         if payload.trigger_id:
             client.views_open(trigger_id=payload.trigger_id, view=view)
     return Response()
@@ -203,24 +204,20 @@ async def view_submission(request: Request):
         team_conf = TeamConf.get(payload.team.id)
     except TeamConf.DoesNotExist:
         return Response(status_code=HTTPStatus.BAD_REQUEST)
-    if payload.view.callback_id == 'add_emoji':
-        emoji: str = payload.view.state.values['emoji']['emoji']['value'].strip(':')
-        # 入力されたemojiがワークスペースに登録されているか検証
+    if payload.view.callback_id == 'edit_emoji_set':
+        emojis: Dict[str, str] = {block_id: v[block_id]['value'] for block_id, v in payload.view.state.values.items()}
         client = WebClient(team_conf.access_token)
-        emoji_list = list(client.emoji_list().get('emoji').keys())
-        if emoji not in emoji_list:
-            return {'response_action': 'errors', "errors": {'emoji': 'ワークスペースに登録されていないemojiです'}}
-        if team_conf.emoji_set is None:
-            # TeanConfのレコードにemoji_setが存在しない場合Noneが返ってくるので空の`set()`をセットする
-            team_conf.emoji_set = set()
-        if 10 <= len(team_conf.emoji_set):
-            # モーダルに表示できるcheckboxが10個までなので登録できる上限は10個
-            return {'response_action': 'errors', "errors": {'emoji': '登録できるemojiは最大10個までです'}}
-        team_conf.emoji_set.add(emoji)
-        team_conf.save()
-    if payload.view.callback_id == 'remove_emoji':
-        selected_options = payload.view.state.values['emoji_list']['emoji_list']['selected_options']
-        for item in selected_options:
-            team_conf.emoji_set.remove(item['value'])
+        slack_registered_emoji_list = list(client.emoji_list().get('emoji').keys())
+        unicode_emoji_list = list(map(lambda x: x.strip(':'), emoji.unicode_codes.EMOJI_UNICODE_ENGLISH.keys()))
+        available_emoji_list = slack_registered_emoji_list + unicode_emoji_list
+        errors = {}
+        for key, value in emojis.items():
+            if value is None:
+                continue
+            if value.strip(':') not in available_emoji_list:
+                errors[key] = '登録されていないemojiです'
+        if len(errors):
+            return {'response_action': 'errors', "errors": errors}
+        team_conf.emoji_set = set(map(lambda x: x.strip(':'), filter(lambda x: x, list(emojis.values()))))
         team_conf.save()
     return Response()

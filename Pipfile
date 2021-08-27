@@ -13,6 +13,7 @@ pydantic = "*"
 python-multipart = "*"
 sentry-sdk = "*"
 cryptography = "*"
+emoji = "*"
 
 [dev-packages]
 uvicorn = "*"
@@ -30,7 +31,7 @@ types-pytz = "*"
 python_version = "3.8"
 
 [scripts]
-start = "uvicorn app:app --reload"
-pytest-cov = "pytest -s -v --cov=app"
+serve = "uvicorn app:app --reload"
 mypy = "mypy --config-file mypy.ini app tests"
+pytest-cov = "pytest -s -v --cov=app"
 pytest-cov-html = "pytest -s -v --cov=app --cov-report=html --capture=sys"

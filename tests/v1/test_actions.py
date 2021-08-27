@@ -86,9 +86,11 @@ def test_shortcut_teamconf_doesnot_exists():
     assert res.status_code == HTTPStatus.BAD_REQUEST
 
 
-@mock.patch('app.models.TeamConf.get', get_object)
+@mock_dynamodb2
 @mock.patch('slack_sdk.web.base_client.BaseClient.api_call', lambda x, *y, **z:...)
-def test_shortcut_add_emoji():
+def test_shortcut_add_emoji_set():
+    models.TeamConf.create_table()
+    models.TeamConf('T0000000000', access_token='access_token').save()
     payload = {
         'type': 'shortcut',
         'team': {
@@ -99,7 +101,7 @@ def test_shortcut_add_emoji():
             'id': 'U00XXXXXXX',
             'team_id': 'T0000000000'
         },
-        'callback_id': 'add_emoji',
+        'callback_id': 'edit_emoji_set',
         'trigger_id': 'trigger_id',
     }
     data = {'payload': json.dumps(payload)}
@@ -109,7 +111,7 @@ def test_shortcut_add_emoji():
 
 @mock.patch('app.models.TeamConf.get', get_object)
 @mock.patch('slack_sdk.web.base_client.BaseClient.api_call', lambda x, *y, **z:...)
-def test_shortcut_remove_emoji():
+def test_shortcut_edit_emoji_set():
     payload = {
         'type': 'shortcut',
         'team': {
@@ -120,7 +122,7 @@ def test_shortcut_remove_emoji():
             'id': 'U00XXXXXXX',
             'team_id': 'T0000000000'
         },
-        'callback_id': 'remove_emoji',
+        'callback_id': 'edit_emoji_set',
         'trigger_id': 'trigger_id',
     }
     data = {'payload': json.dumps(payload)}
@@ -128,10 +130,11 @@ def test_shortcut_remove_emoji():
     assert res.status_code == HTTPStatus.OK
 
 
-def test_modal_input():
-    """emojiの削除Modalに入力すると通知が来るがとくに何もせずに空レスポンスを送るケース"""
+@mock.patch('app.models.TeamConf.get', get_object)
+@mock.patch('slack_sdk.web.base_client.BaseClient.api_call', lambda x, *y, **z:...)
+def test_shortcut_edit_emoji_set():
     payload = {
-        'type': 'block_actions',
+        'type': 'shortcut',
         'team': {
             'id': 'T0000000000',
             'domain': 'team_domain'
@@ -140,32 +143,11 @@ def test_modal_input():
             'id': 'U00XXXXXXX',
             'team_id': 'T0000000000'
         },
-        'container': {
-            'type': 'view',
-            'view_id': 'V00AAAA000A'
-        },
-        'view': {
-            'callback_id': 'remove_emoji',
-            'state': {
-                'values': {
-                    'emoji_list': {
-                        'emoji_list': {
-                            'selected_options': [
-                                {
-                                    'value': 'a'
-                                },
-                                {
-                                    'value': 'b'
-                                },
-                            ]
-                        }
-                    }
-                }
-            }
-        }
+        'callback_id': 'edit_emoji_set',
+        'trigger_id': 'trigger_id',
     }
     data = {'payload': json.dumps(payload)}
-    res = client.post('/v1/actions/', data=data)
+    res = client.post('/v1/actions/shortcuts/', data=data)
     assert res.status_code == HTTPStatus.OK
 
 
@@ -241,7 +223,7 @@ def test_view_submission_team_conf_does_not_exist():
             'team_id': 'T0000000000'
         },
         'view': {
-            'callback_id': 'add_emoji',
+            'callback_id': 'edit_emoji_set',
             'state': {
                 'values': {
                     'emoji': {
@@ -276,13 +258,25 @@ def test_view_submission_add_emoji():
             'team_id': 'T0000000000'
         },
         'view': {
-            'callback_id': 'add_emoji',
+            'callback_id': 'edit_emoji_set',
             'state': {
                 'values': {
-                    'emoji': {
-                        'emoji': {
+                    'emoji_0': {
+                        'emoji_0': {
                             'type': 'plain_text_input',
-                            'value': 'example'
+                            'value': ':example:'
+                        }
+                    },
+                    'emoji_1': {
+                        'emoji_1': {
+                            'type': 'plain_text_input',
+                            'value': None
+                        }
+                    },
+                    'emoji_2': {
+                        'emoji_2': {
+                            'type': 'plain_text_input',
+                            'value': None
                         }
                     }
                 }
@@ -293,13 +287,14 @@ def test_view_submission_add_emoji():
     res = client.post('/v1/actions/view_submission/', data=data)
     team_conf.refresh()
     assert len(team_conf.emoji_set) == 1
+    assert 'example' in team_conf.emoji_set
     assert res.status_code == HTTPStatus.OK
 
 
 @mock_dynamodb2
 @mock.patch('slack_sdk.WebClient.emoji_list', lambda x: {'emoji': {}})
 def test_view_submission_add_unregistered_emoji():
-    """Slackのワークスペースに登録されていないemojiを入力したケース
+    """存在しないemojiを入力したケース
     """
     models.TeamConf.create_table()
     team_conf = models.TeamConf('T0000000000', access_token='access_token')
@@ -315,13 +310,25 @@ def test_view_submission_add_unregistered_emoji():
             'team_id': 'T0000000000'
         },
         'view': {
-            'callback_id': 'add_emoji',
+            'callback_id': 'edit_emoji_set',
             'state': {
                 'values': {
-                    'emoji': {
-                        'emoji': {
+                    'emoji_0': {
+                        'emoji_0': {
                             'type': 'plain_text_input',
                             'value': 'example'
+                        }
+                    },
+                    'emoji_1': {
+                        'emoji_1': {
+                            'type': 'plain_text_input',
+                            'value': None
+                        }
+                    },
+                    'emoji_2': {
+                        'emoji_2': {
+                            'type': 'plain_text_input',
+                            'value': None
                         }
                     }
                 }
@@ -333,57 +340,15 @@ def test_view_submission_add_unregistered_emoji():
     team_conf.refresh()
     assert team_conf.emoji_set is None
     assert res.status_code == HTTPStatus.OK
-    assert res.json()['errors']['emoji'] == 'ワークスペースに登録されていないemojiです'
+    assert res.json()['errors']['emoji_0'] == '登録されていないemojiです'
 
 
 @mock_dynamodb2
-@mock.patch('slack_sdk.WebClient.emoji_list', lambda x: {'emoji': {'example': 'https:example.com/example.png'}})
-def test_view_submission_add_emoji_exceed_limit():
-    """登録されたemojiが上限を超えているケース
-    """
-    models.TeamConf.create_table()
-    team_conf = models.TeamConf(
-        'T0000000000',
-        access_token='access_token',
-        emoji_set={'1', '2', '3', '4', '5', '6', '7', '8', '9', '10'},
-    )
-    team_conf.save()
-    payload = {
-        'type': 'view_submission',
-        'team': {
-            'id': 'T0000000000',
-            'domain': 'team_domain'
-        },
-        'user': {
-            'id': 'U00XXXXXXX',
-            'team_id': 'T0000000000'
-        },
-        'view': {
-            'callback_id': 'add_emoji',
-            'state': {
-                'values': {
-                    'emoji': {
-                        'emoji': {
-                            'type': 'plain_text_input',
-                            'value': 'example'
-                        }
-                    }
-                }
-            },
-        }
-    }
-    data = {'payload': json.dumps(payload)}
-    res = client.post('/v1/actions/view_submission/', data=data)
-    team_conf.refresh()
-    assert len(team_conf.emoji_set) == 10
-    assert res.status_code == HTTPStatus.OK
-    assert res.json()['errors']['emoji'] == '登録できるemojiは最大10個までです'
-
-
-@mock_dynamodb2
+@mock.patch('slack_sdk.WebClient.emoji_list', lambda x: {'emoji': {}})
 def test_view_submission_remove_emoji():
+    """emojiを削除"""
     models.TeamConf.create_table()
-    team_conf = models.TeamConf('T0000000000', access_token='access_token', emoji_set={'a', 'b', 'c', 'd', 'e'})
+    team_conf = models.TeamConf('T0000000000', access_token='access_token', emoji_set={'example'})
     team_conf.save()
     payload = {
         'type': 'view_submission',
@@ -396,16 +361,25 @@ def test_view_submission_remove_emoji():
             'team_id': 'T0000000000'
         },
         'view': {
-            'callback_id': 'remove_emoji',
+            'callback_id': 'edit_emoji_set',
             'state': {
                 'values': {
-                    'emoji_list': {
-                        'emoji_list': {
-                            'selected_options': [{
-                                'value': 'a'
-                            }, {
-                                'value': 'b'
-                            }]
+                    'emoji_0': {
+                        'emoji_0': {
+                            'type': 'plain_text_input',
+                            'value': None
+                        }
+                    },
+                    'emoji_1': {
+                        'emoji_1': {
+                            'type': 'plain_text_input',
+                            'value': None
+                        }
+                    },
+                    'emoji_2': {
+                        'emoji_2': {
+                            'type': 'plain_text_input',
+                            'value': None
                         }
                     }
                 }
@@ -416,4 +390,4 @@ def test_view_submission_remove_emoji():
     res = client.post('/v1/actions/view_submission/', data=data)
     team_conf.refresh()
     assert res.status_code == HTTPStatus.OK
-    assert len(team_conf.emoji_set) == 3
+    assert team_conf.emoji_set is None
