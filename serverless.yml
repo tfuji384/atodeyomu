@@ -1,0 +1,110 @@
+service: atodeyomu
+frameworkVersion: "2"
+variablesResolutionMode: 20210326
+configValidationMode: error
+
+provider:
+  name: aws
+  runtime: python3.8
+  lambdaHashingVersion: 20201221
+  memorySize: 128
+  stage: ${opt:stage, 'dev'}
+  region: ap-northeast-1
+  environment:
+    TZ: Asia/Tokyo
+    ENVIRONMENT_NAME: ${self:provider.stage}
+    DYNAMODB_TABLE: atodeyomu-${self:provider.stage}
+    SENTRY_DNS: ${ssm:/atodeyomu/${self:provider.stage}/sentry_dns}
+    SLACK_CLIENT_ID: ${ssm:/atodeyomu/${self:provider.stage}/slack_client_id}
+    SLACK_CLIENT_SECRET: ${ssm:/atodeyomu/${self:provider.stage}/slack_client_secret}
+    SLACK_SIGNING_SECRET: ${ssm:/atodeyomu/${self:provider.stage}/slack_signing_secret}
+    ENCRYPTION_KEY: ${ssm:/atodeyomu/${self:provider.stage}/encryption_key}
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DescribeTable
+          Resource: "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
+  apiGateway:
+    binaryMediaTypes:
+      - "*/*"
+    resourcePolicy:
+      - Effect: Allow
+        Principal: "*"
+        Action: execute-api:Invoke
+        Resource:
+          - execute-api:/*/GET/*
+      - Effect: Allow
+        Principal: "*"
+        Action: execute-api:Invoke
+        Resource:
+          - execute-api:/*/POST/*
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+  customDomain:
+    domainName: ${ssm:/atodeyomu/${self:provider.stage}/domain_name}
+    stage: ${self:provider.stage}
+    certificateName: "tfuji384.com"
+    basePath: ""
+    createRoute53Record: true
+    endpointType: "regional"
+
+package:
+  patterns:
+    - "!.git/**"
+    - "!.venv/**"
+    - "!**/__pycache__/**"
+    - "!.pytest_cache/**"
+    - "!htmlcov/**"
+    - "!node_modules/**"
+    - "!Pipfile"
+    - "!Pipfile.lock"
+    - "!.github/**"
+    - "!mypy.ini"
+    - "!pytest.ini"
+    - "!tests/**"
+    - "!LICENSE"
+    - "!README.md"
+    - "!.env"
+    - "!.coverage"
+    - "!.gitignore"
+    - "!.style.yapf"
+    - "!package.json"
+    - "!package-lock.json"
+
+functions:
+  app:
+    handler: app.app_handler
+    events:
+      - http:
+          path: /{proxy+}
+          method: ANY
+          cors: true
+    provisionedConcurrency: 1
+
+plugins:
+  - serverless-python-requirements
+  - serverless-domain-manager
+
+resources:
+  Resources:
+    DynamoDbTable:
+      Type: "AWS::DynamoDB::Table"
+      DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: team_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: team_id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}

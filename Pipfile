@@ -1,0 +1,36 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+fastapi = "*"
+pynamodb = "*"
+slack-sdk = "*"
+mangum = "*"
+pytz = "*"
+pydantic = "*"
+python-multipart = "*"
+sentry-sdk = "*"
+cryptography = "*"
+
+[dev-packages]
+uvicorn = "*"
+yapf = "*"
+boto3 = "*"
+pytest = "*"
+pytest-coverage = "*"
+freezegun = "*"
+moto = {extras = ["dynamodb2"], version = "*"}
+mypy = "*"
+types-freezegun = "*"
+types-pytz = "*"
+
+[requires]
+python_version = "3.8"
+
+[scripts]
+start = "uvicorn app:app --reload"
+pytest-cov = "pytest -s -v --cov=app"
+mypy = "mypy --config-file mypy.ini app tests"
+pytest-cov-html = "pytest -s -v --cov=app --cov-report=html --capture=sys"
