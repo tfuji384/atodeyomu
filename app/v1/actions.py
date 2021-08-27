@@ -111,7 +111,6 @@ async def actions(request: Request):
         # モーダルに入力した内容を送信するイベント
         return RedirectResponse('./view_submission/')
     if payload.is_shortcut:
-        print(payload.callback_id)
         # ショートカット（「emojiを追加」「emojiを編集」）を選択したイベント
         return RedirectResponse('./shortcuts/')
     if payload.is_block_actions:
